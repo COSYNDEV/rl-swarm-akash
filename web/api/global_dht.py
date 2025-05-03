@@ -15,7 +15,7 @@ def setup_global_dht(initial_peers, coordinator, logger, kinesis_client):
     global dht_cache
     dht = hivemind.DHT(
         start=True,
-        startup_timeout=60,
+        startup_timeout=180,
         initial_peers=initial_peers,
         cache_nearest=2,
         cache_size=2000,
