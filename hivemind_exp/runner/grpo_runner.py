@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Callable, Tuple
 
 import torch
+import torch.distributed as dist
+import torch.nn as nn
 
 UNSLOTH_ENABLED = False
 try:
@@ -84,7 +86,7 @@ class GRPORunner:
                 gpu_memory_utilization=self.peak_memory_percentage,
                 **model_init_kwargs,
             )[0]
-            return FastLanguageModel.get_peft_model(
+            model = FastLanguageModel.get_peft_model(
                 model,
                 r=16,
                 target_modules=[
@@ -104,10 +106,25 @@ class GRPORunner:
                 random_state=123,
             )
         else:
-            return AutoModelForCausalLM.from_pretrained(
+            model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 **model_init_kwargs,
             )
+
+        # Wrap model with DistributedDataParallel if multiple GPUs are available
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            rank = dist.get_rank()
+            torch.cuda.set_device(rank)
+            model = model.cuda()
+            model = nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[rank],
+                output_device=rank,
+                find_unused_parameters=True
+            )
+            logger.info(f"Using DistributedDataParallel with {dist.get_world_size()} GPUs")
+
+        return model
 
     def get_tokenizer_name(self, model_args: ModelConfig, script_args: GRPOArguments):
         if script_args.tokenizer_name_or_path:

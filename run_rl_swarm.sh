@@ -201,23 +201,47 @@ echo_green ">> Good luck in the swarm!"
 echo_blue ">> Post about rl-swarm on X/twitter! --> https://tinyurl.com/swarmtweet"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-if [ -n "$ORG_ID" ]; then
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --modal_org_id "$ORG_ID" \
-        --contract_address "$SWARM_CONTRACT" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+# Check if multiple GPUs are available
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+if [ "$NUM_GPUS" -gt 1 ] && [ -z "$CPU_ONLY" ]; then
+    echo_green ">> Detected $NUM_GPUS GPUs. Using torchrun for distributed training..."
+    if [ -n "$ORG_ID" ]; then
+        torchrun --nproc_per_node=$NUM_GPUS -m hivemind_exp.gsm8k.train_single_gpu \
+            --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+            --identity_path "$IDENTITY_PATH" \
+            --modal_org_id "$ORG_ID" \
+            --contract_address "$SWARM_CONTRACT" \
+            --config "$CONFIG_PATH" \
+            --game "$GAME"
+    else
+        torchrun --nproc_per_node=$NUM_GPUS -m hivemind_exp.gsm8k.train_single_gpu \
+            --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+            --identity_path "$IDENTITY_PATH" \
+            --public_maddr "$PUB_MULTI_ADDRS" \
+            --initial_peers "$PEER_MULTI_ADDRS" \
+            --host_maddr "$HOST_MULTI_ADDRS" \
+            --config "$CONFIG_PATH" \
+            --game "$GAME"
+    fi
 else
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --public_maddr "$PUB_MULTI_ADDRS" \
-        --initial_peers "$PEER_MULTI_ADDRS" \
-        --host_maddr "$HOST_MULTI_ADDRS" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+    if [ -n "$ORG_ID" ]; then
+        python -m hivemind_exp.gsm8k.train_single_gpu \
+            --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+            --identity_path "$IDENTITY_PATH" \
+            --modal_org_id "$ORG_ID" \
+            --contract_address "$SWARM_CONTRACT" \
+            --config "$CONFIG_PATH" \
+            --game "$GAME"
+    else
+        python -m hivemind_exp.gsm8k.train_single_gpu \
+            --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+            --identity_path "$IDENTITY_PATH" \
+            --public_maddr "$PUB_MULTI_ADDRS" \
+            --initial_peers "$PEER_MULTI_ADDRS" \
+            --host_maddr "$HOST_MULTI_ADDRS" \
+            --config "$CONFIG_PATH" \
+            --game "$GAME"
+    fi
 fi
 
 wait  # Keep script running until Ctrl+C

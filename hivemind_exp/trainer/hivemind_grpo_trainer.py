@@ -7,6 +7,7 @@ from typing import Any
 
 import datasets
 import torch
+import torch.distributed as dist
 from hivemind.dht import DHT
 from hivemind.utils import get_dht_time
 from trl import GRPOConfig, GRPOTrainer
@@ -48,6 +49,12 @@ class HivemindGRPOTrainer:
             self.logger = logger
             self.stage_rewards = 0.0
             super().__init__(processing_class=tokenizer, **kwargs)
+
+            # Set up distributed training if available
+            if dist.is_initialized() and dist.get_world_size() > 1:
+                self.args.dataloader_num_workers = 0  # Disable multiprocessing for DDP
+                self.args.dataloader_pin_memory = True  # Enable pin memory for faster data transfer
+                self.args.dataloader_drop_last = True  # Drop last incomplete batch for DDP
 
         def publish_leaderboard(self):
             r, s = self.node.round_num, self.node.stage_num
@@ -133,6 +140,12 @@ class HivemindGRPOTrainer:
             log_tag = self.node.key
 
         self.logger = logging.getLogger(f"{__name__}:{log_tag}")
+
+        # Set up distributed training if available
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            self.config.dataloader_num_workers = 0  # Disable multiprocessing for DDP
+            self.config.dataloader_pin_memory = True  # Enable pin memory for faster data transfer
+            self.config.dataloader_drop_last = True  # Drop last incomplete batch for DDP
 
     def wait_for(self, result_fn=lambda: None, interval=10, timeout=30):
         start_time = time.monotonic()
