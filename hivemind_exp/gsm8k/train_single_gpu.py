@@ -1,7 +1,4 @@
 import logging
-import torch
-import torch.distributed as dist
-import os
 
 # Needs to be before trl!
 from hivemind_exp.runner.grpo_runner import GRPOArguments, GRPORunner
@@ -22,29 +19,6 @@ from hivemind_exp.runner.gensyn.testnet_grpo_runner import (
 )
 
 
-def setup_distributed():
-    """Initialize distributed training."""
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        rank = int(os.environ['RANK'])
-        world_size = int(os.environ['WORLD_SIZE'])
-        dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
-        torch.cuda.set_device(rank)
-        return rank, world_size
-    else:
-        # If not running in a distributed environment, use all available GPUs
-        num_gpus = torch.cuda.device_count()
-        if num_gpus > 1:
-            print(f"Using {num_gpus} GPUs for training.")
-            # Simulate distributed environment for single-node multi-GPU
-            os.environ['MASTER_ADDR'] = 'localhost'
-            os.environ['MASTER_PORT'] = '12355'
-            os.environ['WORLD_SIZE'] = str(num_gpus)
-            os.environ['RANK'] = '0'
-            dist.init_process_group(backend='nccl', init_method='env://', world_size=num_gpus, rank=0)
-            return 0, num_gpus
-        return 0, 1
-
-
 def main():
     # Setup logging.
     root_logger = logging.getLogger()
@@ -54,9 +28,6 @@ def main():
         colorlog.ColoredFormatter("%(green)s%(levelname)s:%(name)s:%(message)s")
     )
     root_logger.addHandler(handler)
-
-    # Setup distributed training
-    rank, world_size = setup_distributed()
 
     parser = TrlParser((ModelConfig, GRPOArguments, TestnetGRPOArguments, GRPOConfig))  # type: ignore
     model_args, grpo_args, testnet_args, training_args = parser.parse_args_and_config()
