@@ -173,3 +173,36 @@ Therefore, you should do these actions in the following scenarios
     - Use floating point 32 instead of bfloat16 to train your model. This can be changed in the config for your device, i.e. `./hivemind_exp/configs/<directory_relevant_to_your_device>/grpo-qwen-2.5-0.5b-deepseek-r1.yaml`.
 
 - **How can I optimsie `rl-swarm` for my device**? open the `hivemind_exp/configs/gpu/grpo-qwen-2.5-0.5b-deepseek-r1.yaml`. Note that this is for the gpu and not cpu configuration. You can then edit parameters that optimsie the training run. For example, try adjusting the `vllm_gpu_memory_utilization`. Note that optimal settings will vary by device.
+
+## Helpful Commands
+
+### Backup your swarm.pem file from inside the Akash Deployment
+
+Encrypt the swarm.pem file because we are uploading it to a public storage.
+```
+cd /root/.cache
+gpg --batch --output swarm.pem.gpg --passphrase YOUR_PASSWORD --symmetric swarm.pem
+```
+
+Upload the swarm.pem.gpg file to x0.at
+
+```
+curl -F "file=@swarm.pem.gpg" https://x0.at/
+```
+
+It will return a URL like this: https://x0.at/1234567890
+
+### Restore your swarm.pem file to a new deployment
+Download the file using the URL from the previous step in your new deployment before logging in
+```
+cd /root/.cache
+curl https://x0.at/1234567890 -o swarm.pem.gpg
+```
+
+Decrypt the file
+```
+gpg --batch --output swarm.pem --passphrase YOUR_PASSWORD --decrypt swarm.pem.gpg
+```
+
+Make sure the swarm.pem file is in the `/root/.cache` directory or the path you specified in the deployment environment variable `IDENTITY_PATH`.
+
