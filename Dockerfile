@@ -59,7 +59,7 @@ RUN pip install -r requirements-gpu.txt \
 COPY . .
 
 # Install modal-login dependencies
-RUN cd modal-login && npm install && npm run build
+RUN cd modal-login && yarn install
 
 # Make the script executable
 RUN chmod +x ./run_rl_swarm.sh

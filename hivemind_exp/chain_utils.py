@@ -140,8 +140,7 @@ def send_via_api(org_id, method, args):
     # Construct URL and payload.
     url = MODAL_PROXY_URL + method
     payload = {"orgId": org_id} | args
-    
-    logger.info(f"Sending via API: {url} with payload: {payload}")
+
     # Send the POST request.
     response = requests.post(url, json=payload)
     response.raise_for_status()  # Raise an exception for HTTP errors
