@@ -44,6 +44,7 @@ CONNECT_TO_TESTNET=${CONNECT_TO_TESTNET:-"true"}
 USE_BIG_SWARM=${USE_BIG_SWARM:-"false"}
 PARAM_B=${PARAM_B:-"0.5"}
 HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_ACCESS_TOKEN:-"None"}
+CUSTOM_GPU_CONFIG=${CUSTOM_GPU_CONFIG:-""}  # New variable for custom GPU config name
 
 GREEN_TEXT="\033[32m"
 BLUE_TEXT="\033[34m"
@@ -155,11 +156,21 @@ else
     pip install -r "$ROOT"/requirements-gpu.txt
     pip install flash-attn --no-build-isolation
 
-    case "$PARAM_B" in
-        32 | 72) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-bnb-4bit-deepseek-r1.yaml" ;;
-        0.5 | 1.5 | 7) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-deepseek-r1.yaml" ;;
-        *)  echo ">>> Please answer in [0.5, 1.5, 7, 32, 72]." ;;
-    esac
+    if [ -n "$CUSTOM_GPU_CONFIG" ]; then
+        # Use custom configuration from the same directory
+        CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/$CUSTOM_GPU_CONFIG"
+        if [ ! -f "$CONFIG_PATH" ]; then
+            echo "Error: Custom configuration file not found at $CONFIG_PATH"
+            exit 1
+        fi
+    else
+        # Use default configurations based on PARAM_B
+        case "$PARAM_B" in
+            32 | 72) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-bnb-4bit-deepseek-r1.yaml" ;;
+            0.5 | 1.5 | 7) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-deepseek-r1.yaml" ;;
+            *)  echo ">>> Please answer in [0.5, 1.5, 7, 32, 72]." ;;
+        esac
+    fi
     if [ "$USE_BIG_SWARM" = true ]; then
         GAME="dapo"
     else
@@ -173,23 +184,37 @@ echo_green ">> Good luck in the swarm!"
 echo_blue ">> Post about rl-swarm on X/twitter! --> https://tinyurl.com/swarmtweet"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
+# Create a temporary script for the training process
+TRAIN_SCRIPT=$(mktemp)
+chmod +x "$TRAIN_SCRIPT"
+
 if [ -n "$ORG_ID" ]; then
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --modal_org_id "$ORG_ID" \
-        --contract_address "$SWARM_CONTRACT" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+    cat > "$TRAIN_SCRIPT" << EOF
+#!/bin/bash
+python -m hivemind_exp.gsm8k.train_single_gpu \\
+    --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
+    --identity_path "$IDENTITY_PATH" \\
+    --modal_org_id "$ORG_ID" \\
+    --contract_address "$SWARM_CONTRACT" \\
+    --config "$CONFIG_PATH" \\
+    --game "$GAME"
+EOF
 else
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --public_maddr "$PUB_MULTI_ADDRS" \
-        --initial_peers "$PEER_MULTI_ADDRS" \
-        --host_maddr "$HOST_MULTI_ADDRS" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+    cat > "$TRAIN_SCRIPT" << EOF
+#!/bin/bash
+python -m hivemind_exp.gsm8k.train_single_gpu \\
+    --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
+    --identity_path "$IDENTITY_PATH" \\
+    --public_maddr "$PUB_MULTI_ADDRS" \\
+    --initial_peers "$PEER_MULTI_ADDRS" \\
+    --host_maddr "$HOST_MULTI_ADDRS" \\
+    --config "$CONFIG_PATH" \\
+    --game "$GAME"
+EOF
 fi
 
-wait  # Keep script running until Ctrl+C
+# Start the training process with PM2
+pm2 start "$TRAIN_SCRIPT" --name "rl-swarm"
+
+# Keep the script running to maintain the container
+pm2 logs
