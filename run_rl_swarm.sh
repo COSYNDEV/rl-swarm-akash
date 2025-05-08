@@ -95,7 +95,7 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
     cd modal-login
     # Check if the yarn command exists; if not, install Yarn.
 
-    yarn dev > /dev/null 2>&1 & # Run in background and suppress output
+    npm run start & # Run in background
 
     SERVER_PID=$!  # Store the process ID
     echo "Started server process: $SERVER_PID"
