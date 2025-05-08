@@ -191,7 +191,7 @@ chmod +x "$TRAIN_SCRIPT"
 if [ -n "$ORG_ID" ]; then
     cat > "$TRAIN_SCRIPT" << EOF
 #!/bin/bash
-python -m hivemind_exp.gsm8k.train_single_gpu \\
+PYTHONPATH=$ROOT python -m hivemind_exp.gsm8k.train_single_gpu \\
     --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
     --identity_path "$IDENTITY_PATH" \\
     --modal_org_id "$ORG_ID" \\
@@ -202,7 +202,7 @@ EOF
 else
     cat > "$TRAIN_SCRIPT" << EOF
 #!/bin/bash
-python -m hivemind_exp.gsm8k.train_single_gpu \\
+PYTHONPATH=$ROOT python -m hivemind_exp.gsm8k.train_single_gpu \\
     --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
     --identity_path "$IDENTITY_PATH" \\
     --public_maddr "$PUB_MULTI_ADDRS" \\
