@@ -184,37 +184,24 @@ echo_green ">> Good luck in the swarm!"
 echo_blue ">> Post about rl-swarm on X/twitter! --> https://tinyurl.com/swarmtweet"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-# Create a temporary script for the training process
-TRAIN_SCRIPT=$(mktemp)
-chmod +x "$TRAIN_SCRIPT"
-
 if [ -n "$ORG_ID" ]; then
-    cat > "$TRAIN_SCRIPT" << EOF
-#!/bin/bash
-PYTHONPATH=$ROOT python -m hivemind_exp.gsm8k.train_single_gpu \\
-    --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
-    --identity_path "$IDENTITY_PATH" \\
-    --modal_org_id "$ORG_ID" \\
-    --contract_address "$SWARM_CONTRACT" \\
-    --config "$CONFIG_PATH" \\
-    --game "$GAME"
-EOF
+    pm2 start --name "rl-swarm" python -- -m hivemind_exp.gsm8k.train_single_gpu \
+        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+        --identity_path "$IDENTITY_PATH" \
+        --modal_org_id "$ORG_ID" \
+        --contract_address "$SWARM_CONTRACT" \
+        --config "$CONFIG_PATH" \
+        --game "$GAME"
 else
-    cat > "$TRAIN_SCRIPT" << EOF
-#!/bin/bash
-PYTHONPATH=$ROOT python -m hivemind_exp.gsm8k.train_single_gpu \\
-    --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \\
-    --identity_path "$IDENTITY_PATH" \\
-    --public_maddr "$PUB_MULTI_ADDRS" \\
-    --initial_peers "$PEER_MULTI_ADDRS" \\
-    --host_maddr "$HOST_MULTI_ADDRS" \\
-    --config "$CONFIG_PATH" \\
-    --game "$GAME"
-EOF
+    pm2 start --name "rl-swarm" python -- -m hivemind_exp.gsm8k.train_single_gpu \
+        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
+        --identity_path "$IDENTITY_PATH" \
+        --public_maddr "$PUB_MULTI_ADDRS" \
+        --initial_peers "$PEER_MULTI_ADDRS" \
+        --host_maddr "$HOST_MULTI_ADDRS" \
+        --config "$CONFIG_PATH" \
+        --game "$GAME"
 fi
-
-# Start the training process with PM2
-pm2 start "$TRAIN_SCRIPT" --name "rl-swarm"
 
 # Keep the script running to maintain the container
 pm2 logs
