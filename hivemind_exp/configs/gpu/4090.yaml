@@ -18,6 +18,7 @@ gradient_checkpointing_kwargs:
 learning_rate: 5.0e-7 # 1.0e-6 as in the deepseek math paper 5-e7 from https://hijkzzz.notion.site/unraveling-rlhf-and-its-variants-engineering-insights#147d9a33ecc9806090f3d5c749d31f05
 lr_scheduler_type: cosine
 warmup_ratio: 0.03
+optim: adamw_8bit  # Added 8-bit optimizer to reduce memory usage
 
 # GRPO arguments
 use_vllm: true
