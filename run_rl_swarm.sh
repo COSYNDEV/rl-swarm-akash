@@ -24,6 +24,11 @@ IDENTITY_PATH=${IDENTITY_PATH:-$DEFAULT_IDENTITY_PATH}
 DOCKER=${DOCKER:-""}
 GENSYN_RESET_CONFIG=${GENSYN_RESET_CONFIG:-""}
 
+# Environment variables for non-interactive mode
+PUSH_TO_HF_HUB=${PUSH_TO_HF_HUB:-"false"}  # Set to "true" to enable pushing to Hugging Face Hub
+HF_TOKEN=${HF_TOKEN:-""}  # Hugging Face access token
+MODEL_NAME=${MODEL_NAME:-""}  # Model name in huggingface repo/name format
+
 # Bit of a workaround for the non-root docker container.
 if [ -n "$DOCKER" ]; then
     volumes=(
@@ -256,26 +261,22 @@ fi
 
 echo_green ">> Done!"
 
-HF_TOKEN=${HF_TOKEN:-""}
-if [ -n "${HF_TOKEN}" ]; then # Check if HF_TOKEN is already set and use if so. Else give user a prompt to choose.
-    HUGGINGFACE_ACCESS_TOKEN=${HF_TOKEN}
+# Configure Hugging Face settings based on environment variables
+if [ "$PUSH_TO_HF_HUB" = "true" ]; then
+    if [ -n "$HF_TOKEN" ]; then
+        HUGGINGFACE_ACCESS_TOKEN="$HF_TOKEN"
+        echo_green ">> Hugging Face Hub push enabled with provided token"
+    else
+        echo_red ">> Error: PUSH_TO_HF_HUB is set to true but HF_TOKEN is not provided"
+        echo_red ">> Please set HF_TOKEN environment variable or set PUSH_TO_HF_HUB to false"
+        exit 1
+    fi
 else
-    echo -en $GREEN_TEXT
-    read -p ">> Would you like to push models you train in the RL swarm to the Hugging Face Hub? [y/N] " yn
-    echo -en $RESET_TEXT
-    yn=${yn:-N} # Default to "N" if the user presses Enter
-    case $yn in
-        [Yy]*) read -p "Enter your Hugging Face access token: " HUGGINGFACE_ACCESS_TOKEN ;;
-        [Nn]*) HUGGINGFACE_ACCESS_TOKEN="None" ;;
-        *) echo ">>> No answer was given, so NO models will be pushed to Hugging Face Hub" && HUGGINGFACE_ACCESS_TOKEN="None" ;;
-    esac
+    HUGGINGFACE_ACCESS_TOKEN="None"
+    echo_green ">> Hugging Face Hub push disabled"
 fi
 
-echo -en $GREEN_TEXT
-read -p ">> Enter the name of the model you want to use in huggingface repo/name format, or press [Enter] to use the default model. " MODEL_NAME
-echo -en $RESET_TEXT
-
-# Only export MODEL_NAME if user provided a non-empty value
+# Configure model name
 if [ -n "$MODEL_NAME" ]; then
     export MODEL_NAME
     echo_green ">> Using model: $MODEL_NAME"
