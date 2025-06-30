@@ -67,6 +67,12 @@ ROOT_DIR="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
 cleanup() {
     echo_green ">> Shutting down trainer..."
 
+    # Stop PM2 process
+    if command -v pm2 > /dev/null 2>&1; then
+        pm2 stop rl-swarm-trainer 2> /dev/null || true
+        pm2 delete rl-swarm-trainer 2> /dev/null || true
+    fi
+
     # Remove modal credentials if they exist
     rm -r $ROOT_DIR/modal-login/temp-data/*.json 2> /dev/null || true
 
@@ -132,6 +138,12 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
         fi
     fi
 
+    # Install PM2 for process management
+    if ! command -v pm2 > /dev/null 2>&1; then
+        echo "Installing PM2 process manager..."
+        npm install -g --silent pm2
+    fi
+
     ENV_FILE="$ROOT"/modal-login/.env
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS version
@@ -141,17 +153,15 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
         sed -i "3s/.*/SMART_CONTRACT_ADDRESS=$SWARM_CONTRACT/" "$ENV_FILE"
     fi
 
-
     # Docker image already builds it, no need to again.
     if [ -z "$DOCKER" ]; then
         yarn install --immutable
         echo "Building server"
         yarn build > "$ROOT/logs/yarn.log" 2>&1
     fi
-    yarn start >> "$ROOT/logs/yarn.log" 2>&1 & # Run in background and log output
 
-    SERVER_PID=$!  # Store the process ID
-    echo "Started server process: $SERVER_PID"
+    # Start the server
+    yarn start >> "$ROOT/logs/yarn.log" 2>&1 &
     sleep 5
 
     # Try to open the URL in the default browser
@@ -276,8 +286,18 @@ fi
 echo_green ">> Good luck in the swarm!"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-python "$ROOT/genrl-swarm/src/genrl_swarm/runner/swarm_launcher.py" \
-    --config-path "$ROOT/configs" \
-    --config-name "rg-swarm.yaml" 
+echo_green ">> Starting RL Swarm trainer with PM2..."
 
-wait  # Keep script running until Ctrl+C
+pm2 start python --name "rl-swarm-trainer" -- \
+    "$ROOT/genrl-swarm/src/genrl_swarm/runner/swarm_launcher.py" \
+    --config-path "$ROOT/configs" \
+    --config-name "rg-swarm.yaml"
+
+echo_green ">> RL Swarm trainer started with PM2!"
+echo_green ">> Use 'pm2 logs rl-swarm-trainer' to view logs"
+echo_green ">> Use 'pm2 monit' to monitor the process"
+echo_green ">> Use 'pm2 stop rl-swarm-trainer' to stop the process"
+
+# Show PM2 status and follow logs
+pm2 list
+pm2 logs rl-swarm-trainer --lines 50

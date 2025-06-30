@@ -38,7 +38,7 @@ ENV NVM_DIR=/home/gensyn/.nvm NODE_VERSION=22.16.0
 RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION} && \
     . "$NVM_DIR/nvm.sh" && nvm use v${NODE_VERSION} && \
     . "$NVM_DIR/nvm.sh" && nvm alias default v${NODE_VERSION} && \
-    npm install -g --silent yarn
+    npm install -g --silent yarn pm2
 
 COPY ./containerfiles/swarm-node/versions.json ./versions.json
 
