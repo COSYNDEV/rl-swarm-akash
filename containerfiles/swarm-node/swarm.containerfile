@@ -31,7 +31,7 @@ RUN apt update -y && \
     apt-get clean
 
 WORKDIR /home/gensyn
-USER gensyn
+# USER gensyn  # Commented out to run as root for containerized deployments
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 ENV NVM_DIR=/home/gensyn/.nvm NODE_VERSION=22.16.0

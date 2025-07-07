@@ -39,9 +39,9 @@ if [ -n "$DOCKER" ]; then
     )
 
     for volume in ${volumes[@]}; do
-        # Create directories if they don't exist and set permissions without sudo
+        # Create directories if they don't exist and set permissions
         mkdir -p "$volume" 2>/dev/null || true
-        chmod -R 755 "$volume" 2>/dev/null || true
+        chmod -R 777 "$volume" 2>/dev/null || true
     done
 fi
 
