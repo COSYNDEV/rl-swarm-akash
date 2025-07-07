@@ -34,7 +34,7 @@ WORKDIR /home/gensyn
 # USER gensyn  # Commented out to run as root for containerized deployments
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-ENV NVM_DIR=/home/gensyn/.nvm NODE_VERSION=22.16.0
+ENV NVM_DIR=/root/.nvm NODE_VERSION=22.16.0
 RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION} && \
     . "$NVM_DIR/nvm.sh" && nvm use v${NODE_VERSION} && \
     . "$NVM_DIR/nvm.sh" && nvm alias default v${NODE_VERSION} && \
@@ -48,7 +48,7 @@ RUN ./setup_python.sh
 COPY ./containerfiles/swarm-node/install_pip.sh ./install_pip.sh
 RUN ./install_pip.sh
 
-ENV PATH="/home/gensyn/.pyenv/shims:/home/gensyn/.pyenv/bin:$NVM_DIR/versions/node/v${NODE_VERSION}/bin/:${PATH}"
+ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$NVM_DIR/versions/node/v${NODE_VERSION}/bin/:${PATH}"
 
 COPY --chown=gensyn ./modal-login /home/gensyn/rl_swarm/modal-login
 RUN cd /home/gensyn/rl_swarm/modal-login && yarn install --immutable && yarn build

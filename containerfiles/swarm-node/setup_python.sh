@@ -38,11 +38,11 @@ if  ! command -v pyenv &> /dev/null; then
 	fi
   }
 
-  export PYENV_ROOT="/home/gensyn/.pyenv"
+  export PYENV_ROOT="$HOME/.pyenv"
   export PATH="$PYENV_ROOT/bin:$PATH"
-  append_pyenv_init_to_file "/home/gensyn/.zshrc"
-  append_pyenv_init_to_file "/home/gensyn/.bashrc"
-  append_pyenv_init_to_file "/home/gensyn/.profile"
+  append_pyenv_init_to_file "$HOME/.zshrc"
+  append_pyenv_init_to_file "$HOME/.bashrc"
+  append_pyenv_init_to_file "$HOME/.profile"
 fi
 
 echo ""
