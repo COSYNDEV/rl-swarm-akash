@@ -262,7 +262,14 @@ fi
 echo_green ">> Good luck in the swarm!"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-pm2 start python --name "rl-swarm-trainer" -- \
+# Get the actual Python executable path to avoid pyenv shim issues
+PYTHON_EXEC=$(which python)
+if [[ "$PYTHON_EXEC" == *"pyenv/shims"* ]]; then
+    # If using pyenv, get the actual Python path
+    PYTHON_EXEC=$(pyenv which python 2>/dev/null || which python3 || echo "python")
+fi
+
+pm2 start "$PYTHON_EXEC" --name "rl-swarm-trainer" --interpreter none -- \
     -m rgym_exp.runner.swarm_launcher \
     --config-path "$ROOT/configs" \
     --config-name "rg-swarm.yaml"
