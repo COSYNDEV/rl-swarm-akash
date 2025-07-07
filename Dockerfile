@@ -48,12 +48,8 @@ RUN curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
 # Set working directory
 WORKDIR /
 
-# Copy requirements files first to leverage Docker cache
-COPY requirements-gpu.txt requirements-cpu.txt ./
-
 # Install Python dependencies
-RUN pip install -r requirements-gpu.txt \
-    && pip install flash-attn --no-build-isolation
+RUN pip install flash-attn --no-build-isolation
 
 # Copy the rest of the application
 COPY . .
