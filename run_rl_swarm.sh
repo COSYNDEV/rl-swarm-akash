@@ -49,6 +49,12 @@ CPU_ONLY=${CPU_ONLY:-""}
 # Set if successfully parsed from modal-login/temp-data/userData.json.
 ORG_ID=${ORG_ID:-""}
 
+# Environment variables for configuration
+CONNECT_TO_TESTNET=${CONNECT_TO_TESTNET:-"true"}
+USE_BIG_SWARM=${USE_BIG_SWARM:-"false"}
+PARAM_B=${PARAM_B:-"0.5"}
+HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_ACCESS_TOKEN:-"None"}
+
 GREEN_TEXT="\033[32m"
 BLUE_TEXT="\033[34m"
 RED_TEXT="\033[31m"
@@ -80,9 +86,6 @@ cleanup() {
 
     # Remove modal credentials if they exist
     rm -r $ROOT_DIR/modal-login/temp-data/*.json 2> /dev/null || true
-
-    # Kill all processes belonging to this script's process group
-    kill -- -$$ || true
 
     exit 0
 }
