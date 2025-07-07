@@ -48,9 +48,6 @@ RUN curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
 # Set working directory
 WORKDIR /
 
-# Install Python dependencies
-RUN pip install flash-attn --no-build-isolation
-
 # Copy the rest of the application
 COPY . .
 
