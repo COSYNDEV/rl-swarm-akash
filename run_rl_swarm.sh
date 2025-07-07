@@ -267,10 +267,6 @@ fi
 echo_green ">> Good luck in the swarm!"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-python -m rgym_exp.runner.swarm_launcher \
-    --config-path "$ROOT/rgym_exp/config" \
-    --config-name "rg-swarm.yaml" 
-
 pm2 start python --name "rl-swarm-trainer" -- \
     -m rgym_exp.runner.swarm_launcher \
     --config-path "$ROOT/configs" \
