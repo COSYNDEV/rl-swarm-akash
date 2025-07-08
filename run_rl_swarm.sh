@@ -5,33 +5,45 @@ set -euo pipefail
 # General arguments
 ROOT=$PWD
 
-export PUB_MULTI_ADDRS
-export PEER_MULTI_ADDRS
-export HOST_MULTI_ADDRS
+# GenRL Swarm version to use
+GENRL_TAG="v0.1.1"
+
 export IDENTITY_PATH
-export CONNECT_TO_TESTNET
+export GENSYN_RESET_CONFIG
+export CONNECT_TO_TESTNET=true
 export ORG_ID
 export HF_HUB_DOWNLOAD_TIMEOUT=120  # 2 minutes
-
-# Check if public multi-address is given else set to default
-DEFAULT_PUB_MULTI_ADDRS=""
-PUB_MULTI_ADDRS=${PUB_MULTI_ADDRS:-$DEFAULT_PUB_MULTI_ADDRS}
-
-# Check if peer multi-address is given else set to default
-DEFAULT_PEER_MULTI_ADDRS="/ip4/38.101.215.13/tcp/30002/p2p/QmQ2gEXoPJg6iMBSUFWGzAabS2VhnzuS782Y637hGjfsRJ" # gensyn coordinator node
-PEER_MULTI_ADDRS=${PEER_MULTI_ADDRS:-$DEFAULT_PEER_MULTI_ADDRS}
-
-# Check if host multi-address is given else set to default
-DEFAULT_HOST_MULTI_ADDRS="/ip4/0.0.0.0/tcp/38331"
-HOST_MULTI_ADDRS=${HOST_MULTI_ADDRS:-$DEFAULT_HOST_MULTI_ADDRS}
+export SWARM_CONTRACT="0xFaD7C5e93f28257429569B854151A1B8DCD404c2"
+export HUGGINGFACE_ACCESS_TOKEN="None"
 
 # Path to an RSA private key. If this path does not exist, a new key pair will be created.
 # Remove this file if you want a new PeerID.
 DEFAULT_IDENTITY_PATH="$ROOT"/swarm.pem
 IDENTITY_PATH=${IDENTITY_PATH:-$DEFAULT_IDENTITY_PATH}
 
-SMALL_SWARM_CONTRACT="0x69C6e1D608ec64885E7b185d39b04B491a71768C"
-BIG_SWARM_CONTRACT="0x6947c6E196a48B77eFa9331EC1E3e45f3Ee5Fd58"
+DOCKER=${DOCKER:-""}
+GENSYN_RESET_CONFIG=${GENSYN_RESET_CONFIG:-""}
+
+# Environment variables for non-interactive mode
+PUSH_TO_HF_HUB=${PUSH_TO_HF_HUB:-"false"}  # Set to "true" to enable pushing to Hugging Face Hub
+HF_TOKEN=${HF_TOKEN:-""}  # Hugging Face access token
+MODEL_NAME=${MODEL_NAME:-""}  # Model name in huggingface repo/name format
+
+# Bit of a workaround for the non-root docker container.
+if [ -n "$DOCKER" ]; then
+    volumes=(
+        /home/gensyn/rl_swarm/modal-login/temp-data
+        /home/gensyn/rl_swarm/keys
+        /home/gensyn/rl_swarm/configs
+        /home/gensyn/rl_swarm/logs
+    )
+
+    for volume in ${volumes[@]}; do
+        # Create directories if they don't exist and set permissions
+        mkdir -p "$volume" 2>/dev/null || true
+        chmod -R 777 "$volume" 2>/dev/null || true
+    done
+fi
 
 # Will ignore any visible GPUs if set.
 CPU_ONLY=${CPU_ONLY:-""}
@@ -41,12 +53,11 @@ ORG_ID=${ORG_ID:-""}
 
 # Environment variables for configuration
 CONNECT_TO_TESTNET=${CONNECT_TO_TESTNET:-"true"}
-USE_BIG_SWARM=${USE_BIG_SWARM:-"false"}
-PARAM_B=${PARAM_B:-"0.5"}
 HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_ACCESS_TOKEN:-"None"}
 
 GREEN_TEXT="\033[32m"
 BLUE_TEXT="\033[34m"
+RED_TEXT="\033[31m"
 RESET_TEXT="\033[0m"
 
 echo_green() {
@@ -57,11 +68,21 @@ echo_blue() {
     echo -e "$BLUE_TEXT$1$RESET_TEXT"
 }
 
+echo_red() {
+    echo -e "$RED_TEXT$1$RESET_TEXT"
+}
+
 ROOT_DIR="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
 
 # Function to clean up the server process upon exit
 cleanup() {
     echo_green ">> Shutting down trainer..."
+
+    # Stop PM2 process
+    if command -v pm2 > /dev/null 2>&1; then
+        pm2 stop rl-swarm-trainer 2> /dev/null || true
+        pm2 delete rl-swarm-trainer 2> /dev/null || true
+    fi
 
     # Remove modal credentials if they exist
     rm -r $ROOT_DIR/modal-login/temp-data/*.json 2> /dev/null || true
@@ -69,7 +90,12 @@ cleanup() {
     exit 0
 }
 
+errnotify() {
+    echo_red ">> An error was detected while running rl-swarm. See $ROOT/logs for full logs."
+}
+
 trap cleanup EXIT
+trap errnotify ERR
 
 echo -e "\033[38;5;224m"
 cat << "EOF"
@@ -83,11 +109,8 @@ cat << "EOF"
 
 EOF
 
-if [ "$USE_BIG_SWARM" = true ]; then
-    SWARM_CONTRACT="$BIG_SWARM_CONTRACT"
-else
-    SWARM_CONTRACT="$SMALL_SWARM_CONTRACT"
-fi
+# Create logs directory if it doesn't exist
+mkdir -p "$ROOT/logs"
 
 if [ "$CONNECT_TO_TESTNET" = true ]; then
     # Run modal_login server.
@@ -95,17 +118,61 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
     cd modal-login
     # Check if the yarn command exists; if not, install Yarn.
 
-    yarn dev > /dev/null 2>&1 & # Run in background and suppress output
+    # Node.js + NVM setup
+    if ! command -v node > /dev/null 2>&1; then
+        echo "Node.js not found. Installing NVM and latest Node.js..."
+        export NVM_DIR="$HOME/.nvm"
+        if [ ! -d "$NVM_DIR" ]; then
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        fi
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+        nvm install node
+    else
+        echo "Node.js is already installed: $(node -v)"
+    fi
 
-    SERVER_PID=$!  # Store the process ID
-    echo "Started server process: $SERVER_PID"
+    if ! command -v yarn > /dev/null 2>&1; then
+        echo "Yarn not found. Installing Yarn globally with npm (no profile edits)…"
+        # This lands in $NVM_DIR/versions/node/<ver>/bin which is already on PATH
+        npm install -g --silent yarn
+    fi
+
+    # Install PM2 for process management
+    if ! command -v pm2 > /dev/null 2>&1; then
+        echo "Installing PM2 process manager..."
+        npm install -g --silent pm2
+    fi
+
+    ENV_FILE="$ROOT"/modal-login/.env
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS version
+        sed -i '' "3s/.*/SMART_CONTRACT_ADDRESS=$SWARM_CONTRACT/" "$ENV_FILE"
+    else
+        # Linux version
+        sed -i "3s/.*/SMART_CONTRACT_ADDRESS=$SWARM_CONTRACT/" "$ENV_FILE"
+    fi
+
+    # Docker image already builds it, no need to again.
+    if [ -z "$DOCKER" ]; then
+        yarn install --immutable
+        echo "Building server"
+        yarn build > "$ROOT/logs/yarn.log" 2>&1
+    fi
+
+    # Start the server
+    yarn start >> "$ROOT/logs/yarn.log" 2>&1 &
     sleep 5
 
     # Try to open the URL in the default browser
-    if open http://localhost:3000 2> /dev/null; then
-        echo_green ">> Successfully opened http://localhost:3000 in your default browser."
+    if [ -z "$DOCKER" ]; then
+        if open http://localhost:3000 2> /dev/null; then
+            echo_green ">> Successfully opened http://localhost:3000 in your default browser."
+        else
+            echo ">> Failed to open http://localhost:3000. Please open it manually."
+        fi
     else
-        echo ">> Failed to open http://localhost:3000. Please open it manually."
+        echo_green ">> Please open http://localhost:3000 in your host browser."
     fi
 
     cd ..
@@ -131,65 +198,87 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
             sleep 5
         fi
     done
-
-    ENV_FILE="$ROOT"/modal-login/.env
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS version
-        sed -i '' "3s/.*/SMART_CONTRACT_ADDRESS=$SWARM_CONTRACT/" "$ENV_FILE"
-    else
-        # Linux version
-        sed -i "3s/.*/SMART_CONTRACT_ADDRESS=$SWARM_CONTRACT/" "$ENV_FILE"
-    fi
 fi
 
 echo_green ">> Getting requirements..."
-
 pip install --upgrade pip
-if [ -n "$CPU_ONLY" ] || ! command -v nvidia-smi &> /dev/null; then
-    # CPU-only mode or no NVIDIA GPU found
-    pip install -r "$ROOT"/requirements-cpu.txt
-    CONFIG_PATH="$ROOT/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml" # TODO: Fix naming.
-    GAME="gsm8k"
-else
-    # NVIDIA GPU found
-    pip install -r "$ROOT"/requirements-gpu.txt
-    pip install flash-attn --no-build-isolation
 
-    case "$PARAM_B" in
-        32 | 72) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-bnb-4bit-deepseek-r1.yaml" ;;
-        0.5 | 1.5 | 7) CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-${PARAM_B}b-deepseek-r1.yaml" ;;
-        *)  echo ">>> Please answer in [0.5, 1.5, 7, 32, 72]." ;;
-    esac
-    if [ "$USE_BIG_SWARM" = true ]; then
-        GAME="dapo"
-    else
-        GAME="gsm8k"
+# echo_green ">> Installing GenRL..."
+pip install gensyn-genrl==0.1.4
+pip install reasoning-gym>=0.1.20 # for reasoning gym env
+pip install trl # for grpo config, will be deprecated soon
+pip install hivemind@git+https://github.com/learning-at-home/hivemind@4d5c41495be082490ea44cce4e9dd58f9926bb4e # We need the latest, 1.1.11 is broken
+
+
+if [ ! -d "$ROOT/configs" ]; then
+    mkdir "$ROOT/configs"
+fi  
+if [ -f "$ROOT/configs/rg-swarm.yaml" ]; then
+    # Use cmp -s for a silent comparison. If different, backup and copy.
+    if ! cmp -s "$ROOT/rgym_exp/config/rg-swarm.yaml" "$ROOT/configs/rg-swarm.yaml"; then
+        if [ -z "$GENSYN_RESET_CONFIG" ]; then
+            echo_green ">> Found differences in rg-swarm.yaml. If you would like to reset to the default, set GENSYN_RESET_CONFIG to a non-empty value."
+        else
+            echo_green ">> Found differences in rg-swarm.yaml. Backing up existing config."
+            mv "$ROOT/configs/rg-swarm.yaml" "$ROOT/configs/rg-swarm.yaml.bak"
+            cp "$ROOT/rgym_exp/config/rg-swarm.yaml" "$ROOT/configs/rg-swarm.yaml"
+        fi
     fi
+else
+    # If the config doesn't exist, just copy it.
+    cp "$ROOT/rgym_exp/config/rg-swarm.yaml" "$ROOT/configs/rg-swarm.yaml"
+fi
+
+if [ -n "$DOCKER" ]; then
+    # Make it easier to edit the configs on Linux systems.
+    chmod -R 755 /home/gensyn/rl_swarm/configs 2>/dev/null || true
 fi
 
 echo_green ">> Done!"
 
-echo_green ">> Good luck in the swarm!"
-echo_blue ">> Post about rl-swarm on X/twitter! --> https://tinyurl.com/swarmtweet"
-echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
-
-if [ -n "$ORG_ID" ]; then
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --modal_org_id "$ORG_ID" \
-        --contract_address "$SWARM_CONTRACT" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+# Configure Hugging Face settings based on environment variables
+if [ "$PUSH_TO_HF_HUB" = "true" ]; then
+    if [ -n "$HF_TOKEN" ]; then
+        HUGGINGFACE_ACCESS_TOKEN="$HF_TOKEN"
+        echo_green ">> Hugging Face Hub push enabled with provided token"
+    else
+        echo_red ">> Error: PUSH_TO_HF_HUB is set to true but HF_TOKEN is not provided"
+        echo_red ">> Please set HF_TOKEN environment variable or set PUSH_TO_HF_HUB to false"
+        exit 1
+    fi
 else
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --public_maddr "$PUB_MULTI_ADDRS" \
-        --initial_peers "$PEER_MULTI_ADDRS" \
-        --host_maddr "$HOST_MULTI_ADDRS" \
-        --config "$CONFIG_PATH" \
-        --game "$GAME"
+    HUGGINGFACE_ACCESS_TOKEN="None"
+    echo_green ">> Hugging Face Hub push disabled"
 fi
 
-wait  # Keep script running until Ctrl+C
+# Configure model name
+if [ -n "$MODEL_NAME" ]; then
+    export MODEL_NAME
+    echo_green ">> Using model: $MODEL_NAME"
+else
+    echo_green ">> Using default model from config"
+fi
+
+echo_green ">> Good luck in the swarm!"
+echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
+
+# Get the actual Python executable path to avoid pyenv shim issues
+PYTHON_EXEC=$(which python)
+if [[ "$PYTHON_EXEC" == *"pyenv/shims"* ]]; then
+    # If using pyenv, get the actual Python path
+    PYTHON_EXEC=$(pyenv which python 2>/dev/null || which python3 || echo "python")
+fi
+
+pm2 start "$PYTHON_EXEC" --name "rl-swarm-trainer" --interpreter none -- \
+    -m rgym_exp.runner.swarm_launcher \
+    --config-path "$ROOT/configs" \
+    --config-name "rg-swarm.yaml"
+
+echo_green ">> RL Swarm trainer started with PM2!"
+echo_green ">> Use 'pm2 logs rl-swarm-trainer' to view logs"
+echo_green ">> Use 'pm2 monit' to monitor the process"
+echo_green ">> Use 'pm2 stop rl-swarm-trainer' to stop the process"
+
+# Show PM2 status and follow logs
+pm2 list
+pm2 logs rl-swarm-trainer --lines 50

@@ -14,8 +14,6 @@ services:
       - "IDENTITY_PATH=/root/.cache/swarm.pem"
       - "CONNECT_TO_TESTNET=true"
       - HF_HUB_DOWNLOAD_TIMEOUT=120
-      - "PARAM_B=32" # Allowed values: 0.5, 1.5, 7, 32, 72
-      - "USE_BIG_SWARM=true" # Allowed values: true, false
       #- "HF_TOKEN=" # HF token for model upload to hub
     params:
       storage:

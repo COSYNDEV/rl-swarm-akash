@@ -5,8 +5,8 @@
 .env
 .next/
 temp-data/
-
 swarm.pem
+logs/
 runs/
 model_output_samples/
 grpo_trainer_lora_model/
@@ -23,3 +23,8 @@ dist/
 MODULE.bazel.lock
 **/.direnv
 .tmux.conf
+
+user/
+
+configs/
+genrl-swarm/
