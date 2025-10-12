@@ -26,6 +26,13 @@ IDENTITY_PATH=${IDENTITY_PATH:-$DEFAULT_IDENTITY_PATH}
 DOCKER=${DOCKER:-""}
 GENSYN_RESET_CONFIG=${GENSYN_RESET_CONFIG:-""}
 
+# Auto-start mode: if swarm.pem exists and config is present, skip interactive setup
+AUTO_START=${AUTO_START:-""}
+if [ -f "$IDENTITY_PATH" ] && [ -f "$ROOT/configs/rg-swarm.yaml" ] && [ -f "$ROOT/modal-login/temp-data/userData.json" ]; then
+    AUTO_START=true
+    echo_green ">> Existing setup detected - enabling auto-start mode"
+fi
+
 # Bit of a workaround for the non-root docker container.
 if [ -n "$DOCKER" ]; then
     volumes=(
@@ -100,7 +107,7 @@ EOF
 # Create logs directory if it doesn't exist
 mkdir -p "$ROOT/logs"
 
-if [ "$CONNECT_TO_TESTNET" = true ]; then
+if [ "$CONNECT_TO_TESTNET" = true ] && [ -z "$AUTO_START" ]; then
     # Run modal_login server.
     echo "Please login to create an Ethereum Server Wallet"
     cd modal-login
@@ -193,15 +200,23 @@ if [ "$CONNECT_TO_TESTNET" = true ]; then
             sleep 5
         fi
     done
+elif [ "$CONNECT_TO_TESTNET" = true ] && [ -n "$AUTO_START" ]; then
+    echo_green ">> Auto-start mode detected - using existing credentials"
+    ORG_ID=$(awk 'BEGIN { FS = "\"" } !/^[ \t]*[{}]/ { print $(NF - 1); exit }' modal-login/temp-data/userData.json)
+    echo_green ">> Found ORG_ID: $ORG_ID"
 fi
 
-echo_green ">> Getting requirements..."
-pip install --upgrade pip
+if [ -z "$AUTO_START" ]; then
+    echo_green ">> Getting requirements..."
+    pip install --upgrade pip
 
- echo_green ">> Installing GenRL..."
-pip install gensyn-genrl==${GENRL_TAG}
-pip install reasoning-gym>=0.1.20 # for reasoning gym env
-pip install hivemind@git+https://github.com/gensyn-ai/hivemind@639c964a8019de63135a2594663b5bec8e5356dd # We need the latest, 1.1.11 is broken
+    echo_green ">> Installing GenRL..."
+    pip install gensyn-genrl==${GENRL_TAG}
+    pip install reasoning-gym>=0.1.20 # for reasoning gym env
+    pip install hivemind@git+https://github.com/gensyn-ai/hivemind@639c964a8019de63135a2594663b5bec8e5356dd # We need the latest, 1.1.11 is broken
+else
+    echo_green ">> Skipping package installation in auto-start mode"
+fi
 
 
 if [ ! -d "$ROOT/configs" ]; then
@@ -230,45 +245,64 @@ fi
 
 echo_green ">> Done!"
 
+if [ -z "$AUTO_START" ]; then
+    echo -en $GREEN_TEXT
+    read -p ">> Would you like to push models you train in the RL swarm to the Hugging Face Hub? [y/N] " yn
+    echo -en $RESET_TEXT
+    yn=${yn:-N} # Default to "N" if the user presses Enter
+    case $yn in
+        [Yy]*) read -p "Enter your Hugging Face access token: " HUGGINGFACE_ACCESS_TOKEN ;;
+        [Nn]*) HUGGINGFACE_ACCESS_TOKEN="None" ;;
+        *) echo ">>> No answer was given, so NO models will be pushed to Hugging Face Hub" && HUGGINGFACE_ACCESS_TOKEN="None" ;;
+    esac
 
-echo -en $GREEN_TEXT
-read -p ">> Would you like to push models you train in the RL swarm to the Hugging Face Hub? [y/N] " yn
-echo -en $RESET_TEXT
-yn=${yn:-N} # Default to "N" if the user presses Enter
-case $yn in
-    [Yy]*) read -p "Enter your Hugging Face access token: " HUGGINGFACE_ACCESS_TOKEN ;;
-    [Nn]*) HUGGINGFACE_ACCESS_TOKEN="None" ;;
-    *) echo ">>> No answer was given, so NO models will be pushed to Hugging Face Hub" && HUGGINGFACE_ACCESS_TOKEN="None" ;;
-esac
 
+    echo -en $GREEN_TEXT
+    read -p ">> Enter the name of the model you want to use in huggingface repo/name format, or press [Enter] to use the default model. " MODEL_NAME
+    echo -en $RESET_TEXT
 
-echo -en $GREEN_TEXT
-read -p ">> Enter the name of the model you want to use in huggingface repo/name format, or press [Enter] to use the default model. " MODEL_NAME
-echo -en $RESET_TEXT
+    # Only export MODEL_NAME if user provided a non-empty value
+    if [ -n "$MODEL_NAME" ]; then
+        export MODEL_NAME
+        echo_green ">> Using model: $MODEL_NAME"
+    else
+        echo_green ">> Using default model from config"
+    fi
 
-# Only export MODEL_NAME if user provided a non-empty value
-if [ -n "$MODEL_NAME" ]; then
-    export MODEL_NAME
-    echo_green ">> Using model: $MODEL_NAME"
+    echo -en $GREEN_TEXT
+    read -p ">> Would you like your model to participate in the AI Prediction Market? [Y/n] " yn
+    if [ "$yn" = "n" ] || [ "$yn" = "N" ]; then
+        PRG_GAME=false
+        echo_green ">> Playing PRG game: false"
+    else
+        echo_green ">> Playing PRG game: true"
+    fi
 else
-    echo_green ">> Using default model from config"
-fi
-
-echo -en $GREEN_TEXT
-read -p ">> Would you like your model to participate in the AI Prediction Market? [Y/n] " yn
-if [ "$yn" = "n" ] || [ "$yn" = "N" ]; then
-    PRG_GAME=false
-    echo_green ">> Playing PRG game: false"
-else
-    echo_green ">> Playing PRG game: true"
+    echo_green ">> Auto-start mode: using existing configuration"
 fi
 
 echo -en $RESET_TEXT
 echo_green ">> Good luck in the swarm!"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
 
-python -m rgym_exp.runner.swarm_launcher \
-    --config-path "$ROOT/rgym_exp/config" \
-    --config-name "rg-swarm.yaml" 
+# Check if PM2 is available
+if command -v pm2 > /dev/null 2>&1; then
+    echo_green ">> Starting swarm with PM2..."
+    pm2 start python \
+        --name "rl-swarm-trainer" \
+        --interpreter none \
+        -- -m rgym_exp.runner.swarm_launcher \
+        --config-path "$ROOT/rgym_exp/config" \
+        --config-name "rg-swarm.yaml"
 
-wait  # Keep script running until Ctrl+C
+    echo_green ">> Swarm started with PM2. Use 'pm2 logs rl-swarm-trainer' to view logs."
+    echo_green ">> Use 'pm2 stop rl-swarm-trainer' to stop the swarm."
+    pm2 logs rl-swarm-trainer
+else
+    # Fallback to direct Python execution
+    python -m rgym_exp.runner.swarm_launcher \
+        --config-path "$ROOT/rgym_exp/config" \
+        --config-name "rg-swarm.yaml"
+
+    wait  # Keep script running until Ctrl+C
+fi
